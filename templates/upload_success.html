@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Upload Success — Secure File Storage</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="page">
+    <main class="card center">
+      <h2>File encrypted & saved</h2>
+      <p class="muted">Encrypted filename</p>
+      <div class="info-box">{{ filename }}</div>
+      <p class="muted">Encryption key (store this somewhere safe):</p>
+      <pre class="key-box">{{ key }}</pre>
+      <div class="actions">
+        <a class="btn primary" href="{{ url_for('index') }}">Back to Home</a>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

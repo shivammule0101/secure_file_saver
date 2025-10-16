@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Secure File Storage</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <h1 class="logo">Secure File Storage</h1>
+      <p class="subtitle">Encrypt before you upload — demo using Fernet (AES)</p>
+    </header>
+    <main class="card">
+      <section class="upload-area">
+        <form action="/upload" method="post" enctype="multipart/form-data" class="upload-form">
+          <label class="file-label">Select a file to encrypt and save</label>
+          <input type="file" name="file" required class="file-input"/>
+          <div class="actions">
+            <button class="btn primary" type="submit">Upload & Encrypt</button>
+            <a class="btn ghost" href="{{ url_for('decrypt') }}">Decrypt a file</a>
+          </div>
+        </form>
+      </section>
+      <section class="files">
+        <h3>Encrypted files</h3>
+        {% if files %}
+        <table class="files-table">
+          <thead><tr><th>Filename</th><th>Action</th></tr></thead>
+          <tbody>
+          {% for fn in files %}
+            <tr>
+              <td>{{ fn }}</td>
+              <td><a class="link" href="{{ url_for('serve_file', filename=fn) }}">Download (encrypted)</a></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="muted">No encrypted files yet.</p>
+        {% endif %}
+      </section>
+    </main>
+    <footer class="footer">Made for demo • Keep keys safe</footer>
+  </div>
+</body>
+</html>

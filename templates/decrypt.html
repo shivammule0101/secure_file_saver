@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Decrypt — Secure File Storage</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="page">
+    <main class="card">
+      <h2>Decrypt an encrypted file</h2>
+      <form action="/decrypt" method="post" class="decrypt-form">
+        <label class="label">Choose encrypted file</label>
+        <select name="filename" required class="select">
+          {% for fn in files %}
+            <option value="{{ fn }}">{{ fn }}</option>
+          {% endfor %}
+        </select>
+        <label class="label">Paste encryption key</label>
+        <input type="text" name="key" placeholder="Enter the key you received when uploading" required class="text-input"/>
+        <div class="actions">
+          <button class="btn primary" type="submit">Decrypt & Download</button>
+          <a class="btn ghost" href="{{ url_for('index') }}">Cancel</a>
+        </div>
+      </form>
+    </main>
+  </div>
+</body>
+</html>
