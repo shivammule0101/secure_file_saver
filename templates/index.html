@@ -5,44 +5,323 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Secure File Storage</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  
 </head>
 <body>
   <div class="page">
     <header class="header">
       <h1 class="logo">Secure File Storage</h1>
       <p class="subtitle">Encrypt before you upload — demo using Fernet (AES)</p>
+      <nav class="nav" aria-label="Main navigation">
+        <a href="#/" class="nav-link">Home</a>
+        <a href="#/add" class="nav-link">Upload</a>
+      </nav>
     </header>
-    <main class="card">
-      <section class="upload-area">
-        <form action="/upload" method="post" enctype="multipart/form-data" class="upload-form">
+
+    <main class="card" id="app">
+      <!-- Explorer / Home -->
+      <section id="view-explorer" class="view">
+        <h2>Files Explorer</h2>
+        <p>Browse all uploaded files. Click a filename to view & decrypt.</p>
+
+        <!-- server-side list for non-JS / initial render -->
+        <section class="files" id="server-file-list">
+          <h3>Encrypted files</h3>
+          {% if files %}
+          <table class="files-table" id="files-table">
+            <thead><tr><th>Filename</th><th>Action</th></tr></thead>
+            <tbody>
+            {% for fn in files %}
+              <tr data-fname="{{ fn }}">
+                <td><a href="#/file/{{ fn }}">{{ fn }}</a></td>
+                <td><a class="link" href="{{ url_for('serve_file', filename=fn) }}">Download (encrypted)</a></td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <p class="muted">No encrypted files yet.</p>
+          {% endif %}
+        </section>
+      </section>
+
+      <!-- Upload / Add -->
+      <section id="view-add" class="view" style="display:none;">
+        <h2>Upload & Encrypt</h2>
+        <form id="upload-form" enctype="multipart/form-data" method="post" action="/upload" class="upload-form">
           <label class="file-label">Select a file to encrypt and save</label>
-          <input type="file" name="file" required class="file-input"/>
+          <input type="file" name="file" required class="file-input" id="file-input"/>
           <div class="actions">
             <button class="btn primary" type="submit">Upload & Encrypt</button>
-            <a class="btn ghost" href="{{ url_for('decrypt') }}">Decrypt a file</a>
+            <a class="btn ghost" href="#/">Back to explorer</a>
           </div>
         </form>
+
+        <div id="upload-result" style="display:none; margin-top:1rem;">
+          <h4>File saved</h4>
+          <p>File ID: <span id="result-id"></span></p>
+          <p>Decryption key (store safely): <code id="result-key"></code></p>
+          <p class="muted">This key is also stored in your browser localStorage for convenience (scoped to this file id).</p>
+          <a id="go-to-file" href="#" class="btn">View file</a>
+        </div>
       </section>
-      <section class="files">
-        <h3>Encrypted files</h3>
-        {% if files %}
-        <table class="files-table">
-          <thead><tr><th>Filename</th><th>Action</th></tr></thead>
-          <tbody>
-          {% for fn in files %}
-            <tr>
-              <td>{{ fn }}</td>
-              <td><a class="link" href="{{ url_for('serve_file', filename=fn) }}">Download (encrypted)</a></td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-        {% else %}
-        <p class="muted">No encrypted files yet.</p>
-        {% endif %}
+
+      <!-- File view -->
+      <section id="view-file" class="view" style="display:none;">
+        <h2>File details</h2>
+        <div id="file-meta">
+          <p><strong>ID:</strong> <span id="file-id"></span></p>
+          <p><strong>Name:</strong> <span id="file-name"></span></p>
+        </div>
+
+        <div id="key-area">
+          <label>Decryption key</label>
+          <input id="key-input" type="text" placeholder="Paste key here" class="text-input"/>
+          <div style="margin-top:.5rem;">
+            <button id="download-decrypted" class="btn primary">Download decrypted</button>
+            <button id="save-key" class="btn">Save key to localStorage</button>
+            <a id="download-encrypted" class="btn ghost" href="#" target="_blank">Download encrypted</a>
+          </div>
+        </div>
+
+        <div id="file-messages" style="margin-top:1rem;color:#c00;"></div>
+
+        <p style="margin-top:1rem;"><a href="#/">Back to explorer</a></p>
       </section>
     </main>
+
     <footer class="footer">Made for demo • Keep keys safe</footer>
   </div>
+
+  <script>
+  // client-side router + upload & key management
+  (function(){
+    const views = {
+      explorer: document.getElementById('view-explorer'),
+      add: document.getElementById('view-add'),
+      file: document.getElementById('view-file')
+    };
+
+    function showView(name){
+      Object.values(views).forEach(v => v.style.display = 'none');
+      views[name].style.display = '';
+    }
+
+    function parseHash(){
+      const hash = location.hash || '#/';
+      if(hash === '#/' || hash === '' ) return {route:'/'};
+      if(hash === '#/add') return {route:'/add'};
+      const m = hash.match(/^#\/file\/(.+)$/);
+      if(m) return {route:'/file', id:decodeURIComponent(m[1])};
+      return {route:'/'};
+    }
+
+    async function loadExplorer(){
+      showView('explorer');
+      // try to fetch server API for richer file list if available
+      try {
+        const res = await fetch('/api/files');
+        if(!res.ok) return;
+        const files = await res.json(); // expect [{id,name},...]
+        const tbody = document.querySelector('#files-table tbody') || (function(){
+          const table = document.createElement('table');
+          table.className = 'files-table';
+          table.innerHTML = '<thead><tr><th>Filename</th><th>Action</th></tr></thead><tbody></tbody>';
+          document.querySelector('#server-file-list').appendChild(table);
+          return table.querySelector('tbody');
+        })();
+        tbody.innerHTML = '';
+        files.forEach(f=>{
+          const tr = document.createElement('tr');
+          tr.innerHTML = '<td><a href="#/file/' + encodeURIComponent(f.id) + '">' + escapeHtml(f.name || f.id) + '</a></td>'
+                       + '<td><a class="link" href="/serve/' + encodeURIComponent(f.id) + '">Download (encrypted)</a></td>';
+          tbody.appendChild(tr);
+        });
+      } catch(e){
+        // ignore, keep server-rendered HTML
+      }
+    }
+
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+    async function showFile(id){
+      showView('file');
+      document.getElementById('file-id').textContent = id;
+      // attempt to fetch file meta
+      try {
+        const res = await fetch('/api/files/' + encodeURIComponent(id));
+        if(res.ok){
+          const meta = await res.json(); // expect {id,name}
+          document.getElementById('file-name').textContent = meta.name || id;
+          document.getElementById('download-encrypted').href = meta.encrypted_url || ('/serve/' + encodeURIComponent(meta.name || id));
+        } else {
+          // fallback: display id as name
+          document.getElementById('file-name').textContent = id;
+          document.getElementById('download-encrypted').href = '/serve/' + encodeURIComponent(id);
+        }
+      } catch(e){
+        document.getElementById('file-name').textContent = id;
+        document.getElementById('download-encrypted').href = '/serve/' + encodeURIComponent(id);
+      }
+
+      // auto-fill key from localStorage if present
+      const stored = localStorage.getItem('filekey:' + id);
+      if(stored){
+        document.getElementById('key-input').value = stored;
+        // auto-download decrypted version using stored key
+        // small delay to allow UI to update
+        setTimeout(()=>{
+          downloadDecrypted(id, stored);
+        }, 250);
+      } else {
+        document.getElementById('key-input').value = '';
+      }
+      document.getElementById('file-messages').textContent = '';
+    }
+
+    // download decrypted via POST to /file/<id>/download with JSON {key}
+    async function downloadDecrypted(id, key){
+      const msgEl = document.getElementById('file-messages');
+      msgEl.style.color = '#333';
+      msgEl.textContent = 'Requesting decrypted file...';
+      try {
+        const res = await fetch('/file/' + encodeURIComponent(id) + '/download', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json','Accept':'application/octet-stream'},
+          body: JSON.stringify({key})
+        });
+        if(!res.ok){
+          const text = await res.text();
+          msgEl.style.color = '#c00';
+          msgEl.textContent = 'Error: ' + (text || res.statusText);
+          return;
+        }
+        const blob = await res.blob();
+        const disposition = res.headers.get('Content-Disposition') || '';
+        let filename = id;
+        const fnMatch = /filename="?([^"]+)"?/.exec(disposition);
+        if(fnMatch) filename = fnMatch[1];
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        msgEl.style.color = '#080';
+        msgEl.textContent = 'Download started';
+      } catch(e){
+        msgEl.style.color = '#c00';
+        msgEl.textContent = 'Request failed: ' + e.message;
+      }
+    }
+
+    // handle upload form via AJAX; expect JSON response: {id, name, key}
+    document.getElementById('upload-form').addEventListener('submit', async function(ev){
+      ev.preventDefault();
+      const input = document.getElementById('file-input');
+      if(!input.files.length) return;
+      const file = input.files[0];
+      const fd = new FormData();
+      fd.append('file', file);
+
+      const btn = this.querySelector('button[type=submit]');
+      btn.disabled = true;
+      btn.textContent = 'Uploading...';
+
+      try {
+        const res = await fetch('/upload', { method: 'POST', body: fd, headers: { 'X-Requested-With':'XMLHttpRequest' } });
+        if(!res.ok){
+          const txt = await res.text();
+          alert('Upload failed: ' + txt);
+          return;
+        }
+        const data = await res.json(); // {id,name,key}
+        const id = data.id || data.name || file.name;
+        const key = data.key || '';
+        // show result
+        document.getElementById('upload-result').style.display = '';
+        document.getElementById('result-id').textContent = id;
+        document.getElementById('result-key').textContent = key || '(no key returned)';
+        document.getElementById('go-to-file').href = '#/file/' + encodeURIComponent(id);
+
+        // store key in localStorage if present
+        if(key){
+          try { localStorage.setItem('filekey:' + id, key); } catch(e){}
+        }
+        // refresh explorer
+        await loadExplorer();
+      } catch(e){
+        alert('Upload error: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Upload & Encrypt';
+      }
+    });
+
+    // wiring for file view download/save key buttons
+    document.getElementById('download-decrypted').addEventListener('click', function(){
+      const id = document.getElementById('file-id').textContent;
+      const key = document.getElementById('key-input').value.trim();
+      if(!key){
+        document.getElementById('file-messages').textContent = 'Please enter decryption key';
+        return;
+      }
+      downloadDecrypted(id, key);
+    });
+
+    document.getElementById('save-key').addEventListener('click', function(){
+      const id = document.getElementById('file-id').textContent;
+      const key = document.getElementById('key-input').value.trim();
+      if(!id || !key) return;
+      try {
+        localStorage.setItem('filekey:' + id, key);
+        document.getElementById('file-messages').style.color = '#080';
+        document.getElementById('file-messages').textContent = 'Key saved to localStorage';
+      } catch(e){
+        document.getElementById('file-messages').style.color = '#c00';
+        document.getElementById('file-messages').textContent = 'Failed to save key: ' + e.message;
+      }
+    });
+
+    // route change handling
+    async function onRoute(){
+      const r = parseHash();
+      if(r.route === '/') {
+        await loadExplorer();
+      } else if(r.route === '/add') {
+        showView('add');
+      } else if(r.route === '/file') {
+        await showFile(r.id);
+      }
+      updateNavActive(); // highlight nav after route change
+    }
+
+    // highlight active nav link based on hash
+    function updateNavActive(){
+      const links = document.querySelectorAll('.nav-link');
+      const current = (location.hash || '#/').replace(/#/, '');
+      links.forEach(a=>{
+        const href = (a.getAttribute('href') || '#/').replace(/#/, '');
+        // treat root as '#/' match
+        if(href === current || (href === '/' && current === '')) {
+          a.classList.add('active');
+        } else if(href.startsWith('/file') && current.startsWith('/file')) {
+          // keep file link inactive (no direct file nav), but keep generic handling
+          a.classList.remove('active');
+        } else {
+          a.classList.remove('active');
+        }
+      });
+    }
+
+    window.addEventListener('hashchange', onRoute);
+    window.addEventListener('load', onRoute);
+    // also ensure nav active state is set on initial load even if routing didn't run
+    window.addEventListener('load', updateNavActive);
+  })();
+  </script>
 </body>
 </html>

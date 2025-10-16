@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Upload — Secure File Storage</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <h1 class="logo">Secure File Storage</h1>
+      <p class="subtitle">Encrypt before you upload — demo using Fernet (AES)</p>
+      <nav class="nav" aria-label="Main navigation">
+        <a href="/" class="nav-link">Home</a>
+        <a href="/add" class="nav-link active">Upload</a>
+      </nav>
+    </header>
+
+    <main class="card center">
+      <h2>Upload & Encrypt</h2>
+
+      {% if filename and key %}
+      <p class="muted">File encrypted and stored as</p>
+      <div class="info-box">{{ filename }}</div>
+      <p class="muted">Decryption key (store safely):</p>
+      <pre class="key-box" id="returned-key">{{ key }}</pre>
+      <p class="muted">The key will also be saved to your browser localStorage for convenience.</p>
+      <div class="actions">
+        <a class="btn" href="/file/{{ filename }}">View file</a>
+        <a class="btn ghost" href="/">Back to explorer</a>
+      </div>
+      <script>
+      // If server rendered the key (non-AJAX upload), save it to localStorage for convenience
+      (function(){
+        try{
+          var id = '{{ filename }}';
+          var key = '{{ key }}';
+          if(id && key){
+            localStorage.setItem('filekey:' + id, key);
+          }
+        }catch(e){ /* ignore */ }
+      })();
+      </script>
+      {% else %}
+
+      <form id="upload-form" enctype="multipart/form-data" method="post" action="/upload" class="upload-form">
+        <label class="file-label">Select a file to encrypt and save</label>
+        <input type="file" name="file" required class="file-input" id="file-input"/>
+        <div class="actions">
+          <button class="btn primary" type="submit">Upload & Encrypt</button>
+          <a class="btn ghost" href="/">Back to explorer</a>
+        </div>
+      </form>
+
+      <div id="upload-result" style="display:none; margin-top:1rem;">
+        <h4>File saved</h4>
+        <p>File ID: <span id="result-id"></span></p>
+        <p>Decryption key (store safely): <code id="result-key"></code></p>
+        <a id="go-to-file" href="#" class="btn">View file</a>
+      </div>
+
+      {% endif %}
+    </main>
+
+    <footer class="footer">Made for demo • Keep keys safe</footer>
+  </div>
+
+  <script>
+  (function(){
+    const form = document.getElementById('upload-form');
+    if(!form) return;
+    form.addEventListener('submit', async function(ev){
+      ev.preventDefault();
+      const input = document.getElementById('file-input');
+      if(!input.files.length) return;
+      const file = input.files[0];
+      const fd = new FormData();
+      fd.append('file', file);
+
+      const btn = this.querySelector('button[type=submit]');
+      btn.disabled = true;
+      btn.textContent = 'Uploading...';
+
+      try {
+        const res = await fetch('/upload', { method: 'POST', body: fd, headers: { 'X-Requested-With':'XMLHttpRequest' } });
+        if(!res.ok){
+          alert('Upload failed');
+          return;
+        }
+        const data = await res.json();
+        const id = data.id || data.name || file.name;
+        const key = data.key || '';
+        // store key in localStorage scoped to file id
+        try { localStorage.setItem('filekey:' + id, key); } catch(e){}
+        // show result
+        document.getElementById('upload-result').style.display = '';
+        document.getElementById('result-id').textContent = id;
+        document.getElementById('result-key').textContent = key || '(no key)';
+        document.getElementById('go-to-file').href = '/file/' + encodeURIComponent(id);
+      } catch(e){
+        alert('Upload error: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Upload & Encrypt';
+      }
+    });
+  })();
+  </script>
+</body>
+</html>

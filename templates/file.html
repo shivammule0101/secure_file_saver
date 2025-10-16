@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>File — Secure File Storage</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <h1 class="logo">Secure File Storage</h1>
+      <p class="subtitle">Encrypt before you upload — demo using Fernet (AES)</p>
+      <nav class="nav" aria-label="Main navigation">
+        <a href="/" class="nav-link">Home</a>
+        <a href="/add" class="nav-link">Upload</a>
+      </nav>
+    </header>
+
+    <main class="card center">
+      <h2>File details</h2>
+      <p class="muted">File ID</p>
+      <div class="info-box" id="file-id">{{ file_id }}</div>
+      <p class="muted">Encrypted filename</p>
+      <div class="info-box">{{ file_id }}</div>
+
+      <label class="label">Decryption key</label>
+      <input disabled id="key-input" type="text" placeholder="Paste key here" class="text-input" />
+
+      <div style="margin-top:.5rem;" class="actions">
+        <button id="download-decrypted" class="btn primary">Download decrypted</button>
+        <a id="download-encrypted" class="btn ghost" href="/serve/{{ file_id }}">Download encrypted</a>
+        <a class="btn" href="/">Back to explorer</a>
+      </div>
+
+      <p id="file-messages" style="margin-top:1rem;color:#c00;"></p>
+    </main>
+
+    <footer class="footer">Made for demo • Keep keys safe</footer>
+  </div>
+
+  <script>
+  (function(){
+    const id = decodeURIComponent('{{ file_id }}');
+    const keyInput = document.getElementById('key-input');
+    const msg = document.getElementById('file-messages');
+
+    // auto-fill from localStorage
+    const stored = localStorage.getItem('filekey:' + id);
+    if(stored){
+      keyInput.value = stored;
+    }
+
+    document.getElementById('download-decrypted').addEventListener('click', function(){
+      const key = keyInput.value.trim();
+      if(!key){ msg.textContent = 'Please enter the decryption key'; return; }
+      downloadDecrypted(id, key);
+    });
+
+    async function downloadDecrypted(id, key){
+      msg.style.color = '#333'; msg.textContent = 'Requesting decrypted file...';
+      try{
+        const res = await fetch('/file/' + encodeURIComponent(id) + '/download', {
+          method: 'POST', headers: {'Content-Type':'application/json','Accept':'application/octet-stream'}, body: JSON.stringify({key})
+        });
+        if(!res.ok){ const t = await res.text(); msg.style.color='#c00'; msg.textContent = 'Error: ' + (t||res.statusText); return; }
+        const blob = await res.blob();
+        const disposition = res.headers.get('Content-Disposition') || '';
+        let filename = id;
+        const fnMatch = /filename="?([^\"]+)"?/.exec(disposition);
+        if(fnMatch) filename = fnMatch[1];
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+        msg.style.color = '#080'; msg.textContent = 'Download started';
+        // save key to localStorage for convenience
+        try{ localStorage.setItem('filekey:' + id, key); }catch(e){}
+      }catch(e){ msg.style.color='#c00'; msg.textContent = 'Request failed: ' + e.message; }
+    }
+  })();
+  </script>
+</body>
+</html>
